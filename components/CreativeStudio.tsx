@@ -4,7 +4,7 @@ import type { GeneratedContent, PromptExample } from '../types';
 import { generationPrompts, editingPrompts } from '../constants';
 import { generateImageFromText, editImage } from '../services/geminiService';
 import Loader from './Loader';
-import { UploadIcon, SparklesIcon, ChevronDownIcon, DownloadIcon, PaintBrushIcon, EraserIcon, XCircleIcon } from './icons';
+import { UploadIcon, SparklesIcon, ChevronDownIcon, DownloadIcon, PaintBrushIcon, EraserIcon, XCircleIcon, LockClosedIcon, LockOpenIcon } from './icons';
 
 const PromptGuide: React.FC<{
   prompts: PromptExample[];
@@ -63,6 +63,9 @@ const CreativeStudio: React.FC = () => {
     const maskCanvasRef = useRef<HTMLCanvasElement>(null);
     const isDrawing = useRef<boolean>(false);
     const [hasMask, setHasMask] = useState<boolean>(false);
+
+    // Character consistency state
+    const [lockedCharacterImage, setLockedCharacterImage] = useState<string | null>(null);
 
 
     const clearMask = useCallback(() => {
@@ -158,6 +161,21 @@ const CreativeStudio: React.FC = () => {
         maskCanvasRef.current?.getContext('2d')?.closePath();
     }, []);
 
+    const dataUrlToFile = async (dataUrl: string, filename: string): Promise<File> => {
+      const res = await fetch(dataUrl);
+      const blob = await res.blob();
+      return new File([blob], filename, { type: blob.type });
+    };
+
+    const handleLockCharacter = (imageUrl: string) => {
+        setLockedCharacterImage(imageUrl);
+        setResult(null);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    };
+
+    const handleUnlockCharacter = () => {
+        setLockedCharacterImage(null);
+    };
 
     const handleSubmit = async () => {
         if (!prompt || loading) return;
@@ -170,19 +188,22 @@ const CreativeStudio: React.FC = () => {
         setError(null);
         setResult(null);
 
-        let maskData: string | undefined = undefined;
-        if (activeTab === AppTab.EDITING && imageFile && hasMask) {
-            const canvas = maskCanvasRef.current;
-            if (canvas) {
-                maskData = canvas.toDataURL('image/png').split(',')[1];
-            }
-        }
-
         try {
             let apiResult: GeneratedContent;
-            if (activeTab === AppTab.GENERATION) {
+
+            if (activeTab === AppTab.GENERATION && lockedCharacterImage) {
+                 const lockedImageFile = await dataUrlToFile(lockedCharacterImage, 'locked-character.png');
+                 apiResult = await editImage(prompt, lockedImageFile);
+            } else if (activeTab === AppTab.GENERATION) {
                 apiResult = await generateImageFromText(prompt);
-            } else {
+            } else { // Editing tab
+                let maskData: string | undefined = undefined;
+                if (imageFile && hasMask) {
+                    const canvas = maskCanvasRef.current;
+                    if (canvas) {
+                        maskData = canvas.toDataURL('image/png').split(',')[1];
+                    }
+                }
                 apiResult = await editImage(prompt, imageFile!, maskData);
             }
             setResult(apiResult);
@@ -229,7 +250,7 @@ const CreativeStudio: React.FC = () => {
                                       <img ref={imageRef} src={imagePreview} alt="업로드 미리보기" className="max-h-64 mx-auto rounded-md" onLoad={handleImageLoad} />
                                       <canvas
                                           ref={maskCanvasRef}
-                                          className={`absolute top-0 left-0 w-full h-full rounded-md ${isErasing ? 'cursor-[url(data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0iY3VycmVudENvbG9yIiB3aWR0aD0iMjQiIGhlaWdodD0iMjQiPjxwYXRoIGZpbGwtcnVsZT0iZXZlbm9kZCIgZD0iTTkuNDQzIDIuMjNhLjc1Ljc1IDAgMDEuMTE0IDBsOC4yNSA4LjI1YS43NS43NSAwIDAxMCAxLjExNGwtOC4yNSA4LjI1YS43NS43NSAwIDAxLTEuMTE0IDBMMi4xOTMgMTEuNmEuNzUuNzUgMCAwMTAtMS4xMTRsOC4yNS04LjI1ek0xMS4yNSAxMC4xNTVsLTEuOTIgMS45MmEuNzUuNzUgMCAwMDAgMS4wNmwzLjA3IDMuMDdhLjc1Ljc1IDAgMDAxLjA2IDBsMS45Mi0xLjkyYS43NS43NSAwIDAwMC0xLjA2bC0zLjA3LTMuMDdhLjc1Ljc1IDAgMDAtMS4wNiAwek0yMi41IDExLjZhLjc1Ljc1IDAgMDEtLjc1LS43NVY4LjI1YS43NS43NSAwIDAxMS41IDB2Mi42YS43NS43NSAwIDAxLS43NS43NXoiIGNsaXAtcnVsZT0iZXZlbm9kZCIgLz48L3N2Zz4=),auto]' : 'cursor-crosshair'}`}
+                                          className={`absolute top-0 left-0 w-full h-full rounded-md ${isErasing ? 'cursor-[url(data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0iY3VycmVudENvbG9yIiB3aWR0aD0iMjQiIGhlaWdodD0iMjQiPjxwYXRoIGZpbGwtcnVsZT0iZXZlbm9kZCIgZD0iTTkuNDQzIDIuMjNhLjc1Ljc1IDAgMDEuMTE0IDBsOC4yNSA4LjI1YS47NS43NSAwIDAxMCAxLjExNGwtOC4yNSA4LjI1YS43NS43NSAwIDAxLTEuMTE0IDBMMi4xOTMgMTEuNmEuNzUuNzUgMCAwMTAtMS4xMTRsOC4yNS04LjI1ek0xMS4yNSAxMC4xNTVsLTEuOTIgMS45MmEuNzUuNzUgMCAwMDAgMS4wNmwzLjA3IDMuMDdhLjc1Ljc1IDAgMDAxLjA2IDBsMS45Mi0xLjkyYS43NS43NSAwIDAwMC0xLjA2bC0zLjA3LTMuMDdhLjc1Ljc1IDAgMDAtMS4wNiAwek0yMi41IDExLjZhLjc1Ljc1IDAgMDEtLjc1LS43NVY4LjI1YS43NS43NSAwIDAxMS41IDB2Mi42YS43NS43NSAwIDAxLS43NS43NXoiIGNsaXAtcnVsZT0iZXZlbm9kZCIgLz48L3N2Zz4=),auto]' : 'cursor-crosshair'}`}
                                           style={{ pointerEvents: imagePreview ? 'auto' : 'none' }}
                                           onMouseDown={startDrawing}
                                           onMouseMove={draw}
@@ -277,6 +298,22 @@ const CreativeStudio: React.FC = () => {
                         </div>
                     )}
                     
+                    {lockedCharacterImage && activeTab === AppTab.GENERATION && (
+                        <div className="p-3 bg-slate-700/50 rounded-lg border border-slate-600 flex items-center justify-between gap-4">
+                            <div className="flex items-center gap-3">
+                                <img src={lockedCharacterImage} alt="Locked character" className="w-12 h-12 rounded-md object-cover" />
+                                <div>
+                                    <h4 className="font-semibold text-slate-200">캐릭터 잠금 활성화</h4>
+                                    <p className="text-xs text-slate-400">새로운 프롬프트는 이 캐릭터를 기반으로 이미지를 생성합니다.</p>
+                                </div>
+                            </div>
+                            <button onClick={handleUnlockCharacter} className="flex items-center gap-2 text-sm bg-slate-600 hover:bg-slate-500 text-white font-semibold py-2 px-3 rounded-md transition-colors">
+                                <LockOpenIcon className="w-4 h-4" />
+                                <span>잠금 해제</span>
+                            </button>
+                        </div>
+                    )}
+
                     <textarea
                         value={prompt}
                         onChange={(e) => setPrompt(e.target.value)}
@@ -312,6 +349,16 @@ const CreativeStudio: React.FC = () => {
                                 >
                                   <DownloadIcon className="w-6 h-6" />
                                 </a>
+                                {activeTab === AppTab.GENERATION && !lockedCharacterImage && (
+                                    <button
+                                        onClick={() => handleLockCharacter(result.imageUrl!)}
+                                        className="absolute bottom-4 left-4 bg-slate-900/70 text-white p-2 rounded-full hover:bg-sky-500 transition-all opacity-0 group-hover:opacity-100 focus:opacity-100"
+                                        aria-label="Lock character"
+                                        title="캐릭터 잠금"
+                                    >
+                                        <LockClosedIcon className="w-6 h-6" />
+                                    </button>
+                                )}
                              </div>
                            )}
                            {result.text && (
@@ -323,8 +370,18 @@ const CreativeStudio: React.FC = () => {
                     )}
                     {!loading && !error && !result && (
                         <div className="text-center text-slate-500">
-                            <SparklesIcon className="w-16 h-16 mx-auto mb-4 opacity-30" />
-                            <p>결과가 여기에 표시됩니다.</p>
+                           {lockedCharacterImage && activeTab === AppTab.GENERATION ? (
+                             <>
+                               <img src={lockedCharacterImage} alt="Locked character preview" className="w-24 h-24 rounded-lg mx-auto mb-4 border-2 border-slate-600" />
+                                <p>잠긴 캐릭터가 준비되었습니다.</p>
+                                <p className="text-sm">새로운 프롬프트를 입력하여 다른 장면을 만들어 보세요.</p>
+                             </>
+                           ) : (
+                             <>
+                               <SparklesIcon className="w-16 h-16 mx-auto mb-4 opacity-30" />
+                               <p>결과가 여기에 표시됩니다.</p>
+                            </>
+                           )}
                         </div>
                     )}
                 </div>
